@@ -5,7 +5,7 @@
 -- Organización: ONG Perú Te Quiero Limpio (PTQL)
 -- ========================================================
 
--- 1. Habilitar extensión PostGIS para geolocalización avanzada (opcional pero recomendado)
+-- 1. Habilitar extensión UUID
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- 2. TABLA DE PERFILES DE USUARIO (VOLUNTARIOS)
@@ -26,6 +26,11 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Lectura pública de perfiles" ON public.profiles;
+DROP POLICY IF EXISTS "Actualización de perfiles" ON public.profiles;
+CREATE POLICY "Lectura pública de perfiles" ON public.profiles FOR SELECT USING (true);
+CREATE POLICY "Actualización de perfiles" ON public.profiles FOR ALL USING (true);
 
 -- 3. TABLA DE REPORTES DE RESIDUOS / INCIDENCIAS AMBIENTALES
 CREATE TABLE IF NOT EXISTS public.reports (
@@ -42,6 +47,9 @@ CREATE TABLE IF NOT EXISTS public.reports (
   status TEXT DEFAULT 'activo' CHECK (status IN ('activo', 'en_proceso', 'resuelto')),
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+ALTER TABLE public.reports ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Acceso público de reportes" ON public.reports;
+CREATE POLICY "Acceso público de reportes" ON public.reports FOR ALL USING (true);
 
 -- 4. TABLA DE JORNADAS DE VOLUNTARIADO (LIMPIEZAS Y ARBORIZACIÓN)
 CREATE TABLE IF NOT EXISTS public.jornadas (
@@ -58,6 +66,9 @@ CREATE TABLE IF NOT EXISTS public.jornadas (
   is_active BOOLEAN DEFAULT TRUE,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+ALTER TABLE public.jornadas ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Lectura de jornadas" ON public.jornadas;
+CREATE POLICY "Lectura de jornadas" ON public.jornadas FOR ALL USING (true);
 
 -- 5. TABLA DE CATÁLOGO DE RECOMPENSAS
 CREATE TABLE IF NOT EXISTS public.rewards (
@@ -69,6 +80,9 @@ CREATE TABLE IF NOT EXISTS public.rewards (
   is_available BOOLEAN DEFAULT TRUE,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+ALTER TABLE public.rewards ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Lectura de recompensas" ON public.rewards;
+CREATE POLICY "Lectura de recompensas" ON public.rewards FOR ALL USING (true);
 
 -- 6. TABLA DE CANJES REALIZADOS
 CREATE TABLE IF NOT EXISTS public.redemptions (
@@ -78,6 +92,9 @@ CREATE TABLE IF NOT EXISTS public.redemptions (
   points_spent INT NOT NULL,
   redeemed_at TIMESTAMPTZ DEFAULT NOW()
 );
+ALTER TABLE public.redemptions ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Acceso de canjes" ON public.redemptions;
+CREATE POLICY "Acceso de canjes" ON public.redemptions FOR ALL USING (true);
 
 -- ========================================================
 -- DATOS INICIALES DE PRUEBA (SEED DATA)
@@ -99,19 +116,3 @@ VALUES
   ('Parque Zonal Sinchi Roca', 'JORNADA DE LIMPIEZA', 'Av. Universitaria s/n, Comas', -12.1850, -77.0200, '1.2 km', 'Dom 24 ago • 8:00 am', 45, 'Jornada integral de recojo de residuos y limpieza comunitaria.'),
   ('Humedales de Villa', 'ARBORIZACIÓN', 'Área de amortiguamiento, Pantanos de Villa', -12.2020, -77.0080, '2.5 km', 'Sáb 30 ago • 7:30 am', 30, 'Siembra de árboles nativos y recuperación paisajística.')
 ON CONFLICT DO NOTHING;
-
--- ========================================================
--- POLÍTICAS DE ACCESO PÚBLICO (ROW LEVEL SECURITY - RLS)
--- Para facilitar las pruebas del prototipo universitario
--- ========================================================
-ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.reports ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.jornadas ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.rewards ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.redemptions ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Lectura pública de perfiles" ON public.profiles FOR SELECT USING (true);
-CREATE POLICY "Lectura y creación pública de reportes" ON public.reports FOR ALL USING (true);
-CREATE POLICY "Lectura de jornadas" ON public.jornadas FOR SELECT USING (true);
-CREATE POLICY "Lectura de recompensas" ON public.rewards FOR SELECT USING (true);
-CREATE POLICY "Creación de canjes" ON public.redemptions FOR ALL USING (true);
