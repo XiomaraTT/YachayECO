@@ -423,24 +423,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Iniciar sesión con Google o Facebook
+  // Iniciar sesión con Google o Facebook (Modo Seguro y Fluido para la Presentación)
   const loginWithSocial = async (provider: 'google' | 'facebook'): Promise<{ success: boolean; error?: string }> => {
-    try {
-      if (isSupabaseConfigured) {
-        await supabase.auth.signInWithOAuth({
-          provider: provider as any,
-        });
-      }
-    } catch (e) {
-      console.log('OAuth redirect simulated for demo:', e);
-    }
-
     const socialName = 'Jean Franco Dávila';
+    const email = provider === 'google' ? 'jeanfranco.davila@gmail.com' : 'jeanfranco.davila@facebook.com';
+
     setUser(prev => ({
       ...prev,
       name: socialName,
       initials: 'JD',
-      email: provider === 'google' ? 'jeanfranco.davila@gmail.com' : 'jeanfranco.davila@facebook.com',
+      email,
+      role: 'Guardián Verde',
+      points: 1250,
+      reportsCount: 12,
+      jornadasCount: 5,
     }));
     setIsAuthenticated(true);
     return { success: true };

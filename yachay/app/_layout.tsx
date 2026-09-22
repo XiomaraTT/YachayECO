@@ -1,11 +1,20 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { Stack, useRouter, useSegments } from 'expo-router';
+import { Stack, useRootNavigationState, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 import React, { useEffect } from 'react';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AppProvider, useApp } from '@/context/AppContext';
+
+// Limpiar fragmento de error OAuth si quedó en la barra de direcciones en Web
+if (typeof window !== 'undefined' && window.location?.hash?.includes('error')) {
+  try {
+    window.history.replaceState(null, '', window.location.pathname);
+  } catch (e) {
+    // Ignorar si el entorno no lo permite
+  }
+}
 
 export const unstable_settings = {
   initialRouteName: '(auth)/login',
@@ -15,15 +24,19 @@ function AuthRouteGuard() {
   const { isAuthenticated } = useApp();
   const segments = useSegments();
   const router = useRouter();
+  const rootNavigationState = useRootNavigationState();
 
   useEffect(() => {
+    // Evitar navegar antes de que el árbol de navegación raíz esté montado
+    if (!rootNavigationState?.key) return;
+
     const inAuthGroup = segments[0] === '(auth)';
     if (!isAuthenticated && !inAuthGroup) {
       router.replace('/(auth)/login' as any);
     } else if (isAuthenticated && inAuthGroup) {
       router.replace('/(tabs)' as any);
     }
-  }, [isAuthenticated, segments]);
+  }, [isAuthenticated, segments, rootNavigationState?.key]);
 
   return null;
 }
@@ -34,7 +47,6 @@ export default function RootLayout() {
   return (
     <AppProvider>
       <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-        <AuthRouteGuard />
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="(auth)/login" options={{ headerShown: false }} />
           <Stack.Screen name="(auth)/register" options={{ headerShown: false }} />
@@ -55,6 +67,7 @@ export default function RootLayout() {
           />
           <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
         </Stack>
+        <AuthRouteGuard />
         <StatusBar style="auto" />
       </ThemeProvider>
     </AppProvider>
