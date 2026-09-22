@@ -4,16 +4,15 @@
  */
 import { createClient } from '@supabase/supabase-js';
 
-// Estas variables se pueden definir en un archivo .env en la raíz de /yachay:
-// EXPO_PUBLIC_SUPABASE_URL=https://tu-proyecto.supabase.co
-// EXPO_PUBLIC_SUPABASE_ANON_KEY=tu-anon-key-aqui
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://placeholder-yachay.supabase.co';
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-anon-key';
+// Normalizar la URL en caso de que termine en /rest/v1/ o /rest/v1
+const rawUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://selddzzxcfjhwrryutpw.supabase.co';
+const supabaseUrl = rawUrl.replace(/\/rest\/v1\/?$/, '');
+const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNlbGRkenp4Y2ZqaHdycnl1dHB3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAwMTU4MDksImV4cCI6MjEwNTU5MTgwOX0.DepkyFhtw0ns0l3yl6qYs9Zej0bt9FFcvj-PwEbziCU';
 
 export const isSupabaseConfigured = Boolean(
-  process.env.EXPO_PUBLIC_SUPABASE_URL && 
-  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY &&
-  !process.env.EXPO_PUBLIC_SUPABASE_URL.includes('placeholder')
+  supabaseUrl && 
+  supabaseAnonKey &&
+  !supabaseUrl.includes('placeholder')
 );
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
@@ -50,9 +49,23 @@ export async function syncReportToSupabase(report: DatabaseReport) {
   try {
     const { data, error } = await supabase.from('reports').insert([report]).select();
     if (error) throw error;
+    console.log('[Supabase] Reporte guardado con éxito en la base de datos remota:', data);
     return { success: true, data, offline: false };
   } catch (error) {
     console.warn('[Supabase Error] Fallo al enviar reporte a la nube, guardado localmente:', error);
     return { success: false, error, offline: true };
+  }
+}
+
+/**
+ * Probar conexión con la base de datos
+ */
+export async function testConnection() {
+  try {
+    const { data, error } = await supabase.from('rewards').select('*').limit(2);
+    if (error) throw error;
+    return { success: true, data };
+  } catch (error) {
+    return { success: false, error };
   }
 }
