@@ -114,6 +114,7 @@ interface AppContextType {
   setUserLocation: (loc: { latitude: number; longitude: number; address: string } | null) => void;
   login: (email: string, pass: string) => Promise<{ success: boolean; error?: string }>;
   loginWithSocial: (provider: 'google' | 'facebook') => Promise<{ success: boolean; error?: string }>;
+  loginAsGuest: () => void;
   registerUser: (data: { name: string; email: string; district: string; password?: string }) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   updateProfile: (data: Partial<UserProfile>) => Promise<boolean>;
@@ -126,12 +127,12 @@ interface AppContextType {
 }
 
 const initialUser: UserProfile = {
-  name: 'Xiomara Torres',
-  email: 'xiomara.torres@utp.edu.pe',
+  name: 'Jean Franco Dávila',
+  email: 'jeanfranco.davila@utp.edu.pe',
   phone: '+51 987 654 321',
   district: 'Chorrillos, Lima',
-  bio: 'Estudiante voluntaria comprometida con la recuperación ambiental de playas y quebradas.',
-  initials: 'XT',
+  bio: 'Estudiante voluntario comprometido con la recuperación ambiental de playas y quebradas.',
+  initials: 'JD',
   role: 'Guardián Verde',
   level: 3,
   nextLevel: 4,
@@ -381,7 +382,7 @@ const initialNotifications: NotificationItem[] = [
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(true);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [user, setUser] = useState<UserProfile>(initialUser);
   const [reports, setReports] = useState<ReportItem[]>([]);
   const [mapPoints, setMapPoints] = useState<MapPoint[]>(initialMapPoints);
@@ -401,7 +402,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           password: pass,
         });
         if (error) {
-          // Si es cuenta demo local, permitir acceso
           console.warn('[Supabase Auth Warning] Fallo auth remoto, verificando acceso local:', error.message);
         }
       }
@@ -435,15 +435,40 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       console.log('OAuth redirect simulated for demo:', e);
     }
 
-    // Configurar usuario según red social para demo
-    const socialName = provider === 'google' ? 'Jean Franco (Google)' : 'Jean Franco (Facebook)';
+    const socialName = 'Jean Franco Dávila';
     setUser(prev => ({
       ...prev,
       name: socialName,
-      initials: 'JF',
+      initials: 'JD',
+      email: provider === 'google' ? 'jeanfranco.davila@gmail.com' : 'jeanfranco.davila@facebook.com',
     }));
     setIsAuthenticated(true);
     return { success: true };
+  };
+
+  // Modo invitado
+  const loginAsGuest = () => {
+    setUser({
+      name: 'Jean Franco (Invitado)',
+      email: 'invitado@yachayeco.pe',
+      phone: '+51 987 654 321',
+      district: 'Chorrillos, Lima',
+      bio: 'Voluntario ambiental de la ONG Perú Te Quiero Limpio.',
+      initials: 'JF',
+      role: 'Guardián Verde',
+      level: 3,
+      nextLevel: 4,
+      points: 1250,
+      pointsForNextLevel: 1500,
+      rank: '#3 Lima',
+      reportsCount: 12,
+      jornadasCount: 5,
+      recoveredZonesCount: 8,
+      treesPlantedCount: 3,
+      notificationsEnabled: true,
+      privacyEnabled: false,
+    });
+    setIsAuthenticated(true);
   };
 
   // Registrar nueva cuenta
@@ -693,6 +718,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setUserLocation,
         login,
         loginWithSocial,
+        loginAsGuest,
         registerUser,
         logout,
         updateProfile,

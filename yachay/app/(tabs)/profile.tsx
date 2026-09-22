@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   Switch,
   Alert,
   Image,
+  Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -16,6 +17,7 @@ import { useApp } from '@/context/AppContext';
 export default function ProfileScreen() {
   const router = useRouter();
   const { user, achievements, activities, toggleNotifications, togglePrivacy, logout } = useApp();
+  const [showLogoutModal, setShowLogoutModal] = useState<boolean>(false);
 
   // Cálculo del progreso de nivel
   const currentBase = 1000;
@@ -28,21 +30,13 @@ export default function ProfileScreen() {
   const pointsRemaining = Math.max(targetBase - user.points, 0);
 
   const handleLogout = () => {
-    Alert.alert(
-      'Cerrar sesión',
-      '¿Estás seguro de que deseas salir de tu cuenta de Yachay Eco?',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Cerrar sesión',
-          style: 'destructive',
-          onPress: () => {
-            logout();
-            router.replace('/(auth)/login' as any);
-          },
-        },
-      ]
-    );
+    setShowLogoutModal(true);
+  };
+
+  const confirmLogout = () => {
+    setShowLogoutModal(false);
+    logout();
+    router.replace('/(auth)/login' as any);
   };
 
   return (
@@ -262,6 +256,37 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Modal de confirmación de cierre de sesión (Cross-platform) */}
+      <Modal
+        visible={showLogoutModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowLogoutModal(false)}>
+        <View style={styles.logoutOverlay}>
+          <View style={styles.logoutCard}>
+            <View style={styles.logoutIcon}>
+              <Ionicons name="log-out-outline" size={30} color="#f44336" />
+            </View>
+            <Text style={styles.logoutTitle}>¿Cerrar sesión?</Text>
+            <Text style={styles.logoutMessage}>
+              ¿Estás seguro de que deseas salir de tu cuenta? Tendrás que iniciar sesión nuevamente para continuar sumando puntos.
+            </Text>
+            <View style={styles.logoutActions}>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => setShowLogoutModal(false)}>
+                <Text style={styles.cancelButtonText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.confirmButton}
+                onPress={confirmLogout}>
+                <Text style={styles.confirmButtonText}>Cerrar sesión</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Espacio extra al final */}
       <View style={{ height: 30 }} />
@@ -626,5 +651,78 @@ const styles = StyleSheet.create({
   },
   configTextDanger: {
     color: '#f44336',
+  },
+  logoutOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  logoutCard: {
+    width: '100%',
+    maxWidth: 340,
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 24,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  logoutIcon: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#ffebee',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  logoutTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#222',
+    marginBottom: 8,
+  },
+  logoutMessage: {
+    fontSize: 13,
+    color: '#666',
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 20,
+  },
+  logoutActions: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  cancelButton: {
+    flex: 1,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: '#f5f5f5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cancelButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#666',
+  },
+  confirmButton: {
+    flex: 1,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: '#f44336',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  confirmButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#fff',
   },
 });

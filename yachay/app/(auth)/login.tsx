@@ -17,7 +17,7 @@ import { useApp } from '@/context/AppContext';
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { login, loginWithSocial } = useApp();
+  const { login, loginWithSocial, loginAsGuest } = useApp();
 
   const [email, setEmail] = useState<string>('jeanfranco.davila@utp.edu.pe');
   const [password, setPassword] = useState<string>('YachayEco2026!');
@@ -35,7 +35,7 @@ export default function LoginScreen() {
     setLoading(false);
 
     if (res.success) {
-      router.replace('/(tabs)');
+      router.replace('/(tabs)' as any);
     } else {
       Alert.alert('Error de acceso', res.error || 'Verifica tus credenciales.');
     }
@@ -45,7 +45,12 @@ export default function LoginScreen() {
     setLoading(true);
     await loginWithSocial(provider);
     setLoading(false);
-    router.replace('/(tabs)');
+    router.replace('/(tabs)' as any);
+  };
+
+  const handleGuestLogin = () => {
+    loginAsGuest();
+    router.replace('/(tabs)' as any);
   };
 
   return (
@@ -154,7 +159,7 @@ export default function LoginScreen() {
           {/* Acceso invitado */}
           <TouchableOpacity
             style={styles.guestButton}
-            onPress={() => router.replace('/(tabs)')}>
+            onPress={handleGuestLogin}>
             <Text style={styles.guestButtonText}>Continuar como voluntario invitado →</Text>
           </TouchableOpacity>
         </View>
