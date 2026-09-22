@@ -551,12 +551,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
 
     // Sincronizar en Supabase si está disponible
-    if (isSupabaseConfigured && updatedData.name) {
+    if (isSupabaseConfigured) {
       try {
-        await supabase.from('profiles').update({
-          full_name: updatedData.name,
-          email: updatedData.email,
-        }).eq('email', user.email);
+        const updatePayload: Record<string, any> = {};
+        if (updatedData.name) updatePayload.full_name = updatedData.name;
+        if (updatedData.email) updatePayload.email = updatedData.email;
+        if (updatedData.phone !== undefined) updatePayload.phone = updatedData.phone;
+        if (updatedData.district !== undefined) updatePayload.district = updatedData.district;
+        if (updatedData.bio !== undefined) updatePayload.bio = updatedData.bio;
+
+        if (Object.keys(updatePayload).length > 0) {
+          await supabase.from('profiles').update(updatePayload).eq('email', user.email);
+        }
       } catch (e) {
         console.log('Update profile cloud error:', e);
       }

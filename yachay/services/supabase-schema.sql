@@ -12,8 +12,11 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE TABLE IF NOT EXISTS public.profiles (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-  full_name TEXT NOT NULL DEFAULT 'Xiomara Torres',
+  full_name TEXT NOT NULL DEFAULT 'Voluntario Yachay',
   email TEXT,
+  phone TEXT,
+  district TEXT,
+  bio TEXT,
   role TEXT DEFAULT 'Guardián Verde',
   level INT DEFAULT 3,
   points INT DEFAULT 1250,
