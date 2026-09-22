@@ -12,12 +12,16 @@ import {
   Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, Redirect } from 'expo-router';
 import { useApp } from '@/context/AppContext';
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { login, loginWithSocial, loginAsGuest } = useApp();
+  const { isAuthenticated, login, loginWithSocial, loginAsGuest } = useApp();
+
+  if (isAuthenticated) {
+    return <Redirect href="/(tabs)" />;
+  }
 
   const [email, setEmail] = useState<string>('jeanfranco.davila@utp.edu.pe');
   const [password, setPassword] = useState<string>('YachayEco2026!');
