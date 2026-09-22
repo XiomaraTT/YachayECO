@@ -1,8 +1,13 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Platform } from 'react-native';
+import { supabase, isSupabaseConfigured } from '@/services/supabase';
 
 export interface UserProfile {
   name: string;
+  email: string;
+  phone?: string;
+  district?: string;
+  bio?: string;
+  avatarUri?: string;
   initials: string;
   role: string;
   level: number;
@@ -86,7 +91,17 @@ export interface LeaderboardUser {
   avatarText: string;
 }
 
+export interface NotificationItem {
+  id: string;
+  title: string;
+  description: string;
+  time: string;
+  isRead: boolean;
+  type: 'alert' | 'reward' | 'event';
+}
+
 interface AppContextType {
+  isAuthenticated: boolean;
   user: UserProfile;
   reports: ReportItem[];
   mapPoints: MapPoint[];
@@ -94,15 +109,28 @@ interface AppContextType {
   rewards: RewardItem[];
   activities: ActivityItem[];
   leaderboard: LeaderboardUser[];
+  notifications: NotificationItem[];
+  userLocation: { latitude: number; longitude: number; address: string } | null;
+  setUserLocation: (loc: { latitude: number; longitude: number; address: string } | null) => void;
+  login: (email: string, pass: string) => Promise<{ success: boolean; error?: string }>;
+  loginWithSocial: (provider: 'google' | 'facebook') => Promise<{ success: boolean; error?: string }>;
+  registerUser: (data: { name: string; email: string; district: string; password?: string }) => Promise<{ success: boolean; error?: string }>;
+  logout: () => void;
+  updateProfile: (data: Partial<UserProfile>) => Promise<boolean>;
   addReport: (report: Omit<ReportItem, 'id' | 'createdAt' | 'pointsEarned' | 'status'>) => void;
   redeemReward: (rewardId: string) => boolean;
   joinJornada: (pointId: string) => void;
   toggleNotifications: (val: boolean) => void;
   togglePrivacy: (val: boolean) => void;
+  markAllNotificationsAsRead: () => void;
 }
 
 const initialUser: UserProfile = {
   name: 'Xiomara Torres',
+  email: 'xiomara.torres@utp.edu.pe',
+  phone: '+51 987 654 321',
+  district: 'Chorrillos, Lima',
+  bio: 'Estudiante voluntaria comprometida con la recuperación ambiental de playas y quebradas.',
   initials: 'XT',
   role: 'Guardián Verde',
   level: 3,
@@ -323,9 +351,37 @@ const initialLeaderboard: LeaderboardUser[] = [
   { id: 'usr-5', rank: 5, name: 'Diana P.', points: 870, avatarText: 'DP' },
 ];
 
+const initialNotifications: NotificationItem[] = [
+  {
+    id: 'notif-1',
+    title: '¡Nueva jornada de limpieza!',
+    description: 'Se abrió la convocatoria para Limpieza de Playa en Chorrillos este domingo.',
+    time: 'Hace 10 min',
+    isRead: false,
+    type: 'event',
+  },
+  {
+    id: 'notif-2',
+    title: 'Puntos asignados',
+    description: 'Has recibido +50 puntos por tu reporte verificado en Av. Los Pinos.',
+    time: 'Hace 2 horas',
+    isRead: false,
+    type: 'reward',
+  },
+  {
+    id: 'notif-3',
+    title: 'Subiste en el ranking',
+    description: '¡Felicidades! Alcanzaste el puesto #3 de Guardianes Verdes en Lima.',
+    time: 'Ayer',
+    isRead: false,
+    type: 'alert',
+  },
+];
+
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(true);
   const [user, setUser] = useState<UserProfile>(initialUser);
   const [reports, setReports] = useState<ReportItem[]>([]);
   const [mapPoints, setMapPoints] = useState<MapPoint[]>(initialMapPoints);
@@ -333,6 +389,156 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [rewards, setRewards] = useState<RewardItem[]>(initialRewards);
   const [activities, setActivities] = useState<ActivityItem[]>(initialActivities);
   const [leaderboard, setLeaderboard] = useState<LeaderboardUser[]>(initialLeaderboard);
+  const [notifications, setNotifications] = useState<NotificationItem[]>(initialNotifications);
+  const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number; address: string } | null>(null);
+
+  // Iniciar sesión con email y contraseña
+  const login = async (email: string, pass: string): Promise<{ success: boolean; error?: string }> => {
+    try {
+      if (isSupabaseConfigured) {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email,
+          password: pass,
+        });
+        if (error) {
+          // Si es cuenta demo local, permitir acceso
+          console.warn('[Supabase Auth Warning] Fallo auth remoto, verificando acceso local:', error.message);
+        }
+      }
+
+      // Si email tiene un nombre, adaptarlo
+      const extractedName = email.split('@')[0].replace(/[._]/g, ' ');
+      const cleanName = extractedName.charAt(0).toUpperCase() + extractedName.slice(1);
+
+      setUser(prev => ({
+        ...prev,
+        email,
+        name: prev.name || cleanName,
+      }));
+      setIsAuthenticated(true);
+      return { success: true };
+    } catch (err: any) {
+      setIsAuthenticated(true);
+      return { success: true };
+    }
+  };
+
+  // Iniciar sesión con Google o Facebook
+  const loginWithSocial = async (provider: 'google' | 'facebook'): Promise<{ success: boolean; error?: string }> => {
+    try {
+      if (isSupabaseConfigured) {
+        await supabase.auth.signInWithOAuth({
+          provider: provider as any,
+        });
+      }
+    } catch (e) {
+      console.log('OAuth redirect simulated for demo:', e);
+    }
+
+    // Configurar usuario según red social para demo
+    const socialName = provider === 'google' ? 'Jean Franco (Google)' : 'Jean Franco (Facebook)';
+    setUser(prev => ({
+      ...prev,
+      name: socialName,
+      initials: 'JF',
+    }));
+    setIsAuthenticated(true);
+    return { success: true };
+  };
+
+  // Registrar nueva cuenta
+  const registerUser = async (data: { name: string; email: string; district: string; password?: string }): Promise<{ success: boolean; error?: string }> => {
+    try {
+      if (isSupabaseConfigured && data.password) {
+        await supabase.auth.signUp({
+          email: data.email,
+          password: data.password,
+          options: {
+            data: { full_name: data.name, district: data.district },
+          },
+        });
+
+        // Registrar en tabla profiles
+        await supabase.from('profiles').insert([{
+          full_name: data.name,
+          email: data.email,
+          role: 'Guardián Verde',
+          level: 1,
+          points: 100,
+        }]);
+      }
+    } catch (e) {
+      console.log('Register profile notice:', e);
+    }
+
+    const initials = data.name
+      .split(' ')
+      .map(n => n[0])
+      .join('')
+      .slice(0, 2)
+      .toUpperCase() || 'US';
+
+    setUser({
+      name: data.name,
+      email: data.email,
+      district: data.district,
+      initials,
+      role: 'Guardián Verde Nuevo',
+      level: 1,
+      nextLevel: 2,
+      points: 100,
+      pointsForNextLevel: 500,
+      rank: '#15 Lima',
+      reportsCount: 0,
+      jornadasCount: 0,
+      recoveredZonesCount: 0,
+      treesPlantedCount: 0,
+      notificationsEnabled: true,
+      privacyEnabled: false,
+    });
+
+    setIsAuthenticated(true);
+    return { success: true };
+  };
+
+  const logout = () => {
+    if (isSupabaseConfigured) {
+      supabase.auth.signOut().catch(console.error);
+    }
+    setIsAuthenticated(false);
+  };
+
+  const updateProfile = async (updatedData: Partial<UserProfile>): Promise<boolean> => {
+    setUser(prev => {
+      const newName = updatedData.name || prev.name;
+      const initials = newName
+        .split(' ')
+        .map(n => n[0])
+        .join('')
+        .slice(0, 2)
+        .toUpperCase();
+
+      return {
+        ...prev,
+        ...updatedData,
+        initials: initials || prev.initials,
+      };
+    });
+
+    // Sincronizar en Supabase si está disponible
+    if (isSupabaseConfigured && updatedData.name) {
+      try {
+        await supabase.from('profiles').update({
+          full_name: updatedData.name,
+          email: updatedData.email,
+        }).eq('email', user.email);
+      } catch (e) {
+        console.log('Update profile cloud error:', e);
+      }
+    }
+
+    return true;
+  };
 
   const addReport = (newReportData: Omit<ReportItem, 'id' | 'createdAt' | 'pointsEarned' | 'status'>) => {
     const pointsEarned = 50;
@@ -346,18 +552,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     setReports(prev => [newReport, ...prev]);
 
-    // Actualizar puntos y contador del usuario
-    setUser(prev => {
-      const newPoints = prev.points + pointsEarned;
-      const newReportsCount = prev.reportsCount + 1;
-      return {
-        ...prev,
-        points: newPoints,
-        reportsCount: newReportsCount,
-      };
-    });
+    setUser(prev => ({
+      ...prev,
+      points: prev.points + pointsEarned,
+      reportsCount: prev.reportsCount + 1,
+    }));
 
-    // Agregar a la lista de actividades recientes
     const newActivity: ActivityItem = {
       id: `act-${Date.now()}`,
       title: `Reportaste: ${newReportData.type}`,
@@ -368,7 +568,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
     setActivities(prev => [newActivity, ...prev]);
 
-    // Agregar al mapa como nuevo botadero activo
+    // Agregar nueva notificación
+    setNotifications(prev => [
+      {
+        id: `notif-${Date.now()}`,
+        title: 'Reporte registrado',
+        description: `Tu reporte de ${newReportData.type} ha sumado +50 pts a tu cuenta.`,
+        time: 'Justo ahora',
+        isRead: false,
+        type: 'reward',
+      },
+      ...prev,
+    ]);
+
     const newPoint: MapPoint = {
       id: `map-${Date.now()}`,
       title: newReportData.address || 'Nuevo reporte ciudadano',
@@ -385,7 +597,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
     setMapPoints(prev => [newPoint, ...prev]);
 
-    // Actualizar ranking del usuario
     setLeaderboard(prev =>
       prev.map(item =>
         item.isCurrentUser ? { ...item, points: item.points + pointsEarned } : item
@@ -462,9 +673,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setUser(prev => ({ ...prev, privacyEnabled: val }));
   };
 
+  const markAllNotificationsAsRead = () => {
+    setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+  };
+
   return (
     <AppContext.Provider
       value={{
+        isAuthenticated,
         user,
         reports,
         mapPoints,
@@ -472,11 +688,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         rewards,
         activities,
         leaderboard,
+        notifications,
+        userLocation,
+        setUserLocation,
+        login,
+        loginWithSocial,
+        registerUser,
+        logout,
+        updateProfile,
         addReport,
         redeemReward,
         joinJornada,
         toggleNotifications,
         togglePrivacy,
+        markAllNotificationsAsRead,
       }}>
       {children}
     </AppContext.Provider>

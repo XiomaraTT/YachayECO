@@ -7,14 +7,17 @@ import {
   TouchableOpacity,
   Switch,
   Alert,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { useApp } from '@/context/AppContext';
 
 export default function ProfileScreen() {
-  const { user, achievements, activities, toggleNotifications, togglePrivacy } = useApp();
+  const router = useRouter();
+  const { user, achievements, activities, toggleNotifications, togglePrivacy, logout } = useApp();
 
-  // Cálculo del progreso de nivel (de 1000 a 1500 para nivel 3->4)
+  // Cálculo del progreso de nivel
   const currentBase = 1000;
   const targetBase = 1500;
   const progressRatio = Math.min(
@@ -30,7 +33,14 @@ export default function ProfileScreen() {
       '¿Estás seguro de que deseas salir de tu cuenta de Yachay Eco?',
       [
         { text: 'Cancelar', style: 'cancel' },
-        { text: 'Cerrar sesión', style: 'destructive', onPress: () => Alert.alert('Sesión cerrada', 'Hasta pronto.') },
+        {
+          text: 'Cerrar sesión',
+          style: 'destructive',
+          onPress: () => {
+            logout();
+            router.replace('/(auth)/login' as any);
+          },
+        },
       ]
     );
   };
@@ -41,15 +51,27 @@ export default function ProfileScreen() {
       <View style={styles.header}>
         {/* Icono de perfil y nombre */}
         <View style={styles.profileHeader}>
-          <View style={styles.avatarContainer}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{user.initials}</Text>
+          <TouchableOpacity
+            style={styles.avatarContainer}
+            onPress={() => router.push('/edit-profile' as any)}>
+            {user.avatarUri ? (
+              <Image source={{ uri: user.avatarUri }} style={styles.avatarImage} />
+            ) : (
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>{user.initials}</Text>
+              </View>
+            )}
+            <View style={styles.editAvatarIcon}>
+              <Ionicons name="pencil" size={12} color="#fff" />
             </View>
-          </View>
+          </TouchableOpacity>
           <View style={styles.profileInfo}>
             <Text style={styles.name}>{user.name}</Text>
+            <Text style={styles.districtText}>
+              <Ionicons name="location-outline" size={12} color="rgba(255,255,255,0.9)" /> {user.district || 'Chorrillos, Lima'}
+            </Text>
             <View style={styles.badgeContainer}>
-              <Ionicons name="shield-checkmark" size={16} color="#fff" />
+              <Ionicons name="shield-checkmark" size={14} color="#fff" />
               <Text style={styles.badgeText}>{user.role}</Text>
             </View>
           </View>
@@ -193,7 +215,7 @@ export default function ProfileScreen() {
         <View style={styles.configCard}>
           <TouchableOpacity 
             style={styles.configItem}
-            onPress={() => Alert.alert('Editar Perfil', 'Función disponible en la siguiente actualización.')}>
+            onPress={() => router.push('/edit-profile' as any)}>
             <View style={styles.configLeft}>
               <Ionicons name="person-outline" size={22} color="#4CAF50" />
               <Text style={styles.configText}>Editar perfil</Text>
@@ -267,6 +289,7 @@ const styles = StyleSheet.create({
   },
   avatarContainer: {
     marginRight: 15,
+    position: 'relative',
   },
   avatar: {
     width: 68,
@@ -277,6 +300,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 2,
     borderColor: '#fff',
+  },
+  avatarImage: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  editAvatarIcon: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#2E7D32',
+    borderWidth: 1.5,
+    borderColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   avatarText: {
     fontSize: 24,
@@ -290,7 +333,12 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: 'bold',
     color: '#fff',
-    marginBottom: 4,
+    marginBottom: 2,
+  },
+  districtText: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.9)',
+    marginBottom: 6,
   },
   badgeContainer: {
     flexDirection: 'row',

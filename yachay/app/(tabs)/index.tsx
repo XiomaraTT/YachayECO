@@ -6,8 +6,9 @@ import { useApp } from '@/context/AppContext';
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { user, mapPoints, joinJornada } = useApp();
+  const { user, mapPoints, joinJornada, notifications } = useApp();
   const [joinedEvents, setJoinedEvents] = useState<{ [key: string]: boolean }>({});
+  const unreadCount = notifications.filter(n => !n.isRead).length;
 
   const handleJoin = (eventId: string, title: string) => {
     if (joinedEvents[eventId]) {
@@ -32,11 +33,13 @@ export default function HomeScreen() {
           </View>
           <TouchableOpacity 
             style={styles.notificationButton}
-            onPress={() => Alert.alert('Notificaciones', 'Tienes 3 nuevas notificaciones de jornadas comunitarias.')}>
+            onPress={() => router.push('/notifications' as any)}>
             <Ionicons name="notifications-outline" size={24} color="#fff" />
-            <View style={styles.notificationBadge}>
-              <Text style={styles.notificationBadgeText}>3</Text>
-            </View>
+            {unreadCount > 0 && (
+              <View style={styles.notificationBadge}>
+                <Text style={styles.notificationBadgeText}>{unreadCount}</Text>
+              </View>
+            )}
           </TouchableOpacity>
         </View>
 

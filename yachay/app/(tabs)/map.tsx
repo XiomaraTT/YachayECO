@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,47 +8,148 @@ import {
   ScrollView,
   Modal,
   Alert,
-  Dimensions,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
 import { useApp, MapPoint } from '@/context/AppContext';
 import { useRouter } from 'expo-router';
 
 type FilterCategory = 'Todos' | 'Botaderos' | 'Jornadas' | 'Árboles';
 
+function calculateDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): string {
+  const R = 6371; // Radio de la Tierra en km
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLon = (lon2 - lon1) * (Math.PI / 180);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * (Math.PI / 180)) *
+      Math.cos(lat2 * (Math.PI / 180)) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const d = R * c;
+  return d < 1 ? `${Math.round(d * 1000)} m` : `${d.toFixed(1)} km`;
+}
+
 export default function MapScreen() {
   const router = useRouter();
-  const { mapPoints, joinJornada } = useApp();
+  const { mapPoints, joinJornada, setUserLocation } = useApp();
 
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedFilter, setSelectedFilter] = useState<FilterCategory>('Todos');
   const [selectedPoint, setSelectedPoint] = useState<MapPoint | null>(null);
 
-  // Filtrado de puntos
-  const filteredPoints = useMemo(() => {
-    return mapPoints.filter(pt => {
-      // Filtro de categoría
-      if (selectedFilter === 'Botaderos' && pt.type !== 'botadero') return false;
-      if (selectedFilter === 'Jornadas' && pt.type !== 'jornada') return false;
-      if (selectedFilter === 'Árboles' && pt.type !== 'arbol') return false;
+  // Estados de GPS Real
+  const [gpsStatus, setGpsStatus] = useState<'requesting' | 'granted' | 'denied' | 'idle'>('requesting');
+  const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [userLocationAddress, setUserLocationAddress] = useState<string>('Detectando satélites GPS...');
+  const [isLocating, setIsLocating] = useState<boolean>(false);
 
-      // Filtro de búsqueda
-      if (searchQuery.trim() !== '') {
-        const q = searchQuery.toLowerCase();
-        return (
-          pt.title.toLowerCase().includes(q) ||
-          pt.address.toLowerCase().includes(q) ||
-          pt.categoryLabel.toLowerCase().includes(q)
+  // Solicitar permiso de ubicación al montar la pantalla
+  useEffect(() => {
+    requestGPSLocation();
+  }, []);
+
+  const requestGPSLocation = async () => {
+    setIsLocating(true);
+    setGpsStatus('requesting');
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        setGpsStatus('denied');
+        setUserLocationAddress('Permiso de GPS no concedido');
+        Alert.alert(
+          'Permiso de Ubicación',
+          'Para ubicar los botaderos y jornadas más cercanas a ti, activa el GPS del teléfono.',
+          [
+            { text: 'Continuar sin GPS', style: 'cancel' },
+            { text: 'Activar permisos', onPress: requestGPSLocation },
+          ]
         );
+        setIsLocating(false);
+        return;
       }
-      return true;
-    });
-  }, [mapPoints, selectedFilter, searchQuery]);
+
+      setGpsStatus('granted');
+      const loc = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+
+      setUserCoords({
+        lat: loc.coords.latitude,
+        lng: loc.coords.longitude,
+      });
+
+      // Geocodificación inversa para obtener la calle real del dispositivo
+      const reverse = await Location.reverseGeocodeAsync({
+        latitude: loc.coords.latitude,
+        longitude: loc.coords.longitude,
+      });
+
+      if (reverse && reverse.length > 0) {
+        const item = reverse[0];
+        const street = item.street || item.name || 'Mi ubicación';
+        const district = item.district || item.subregion || item.city || 'Lima';
+        const fullAddress = `${street}, ${district}`;
+        setUserLocationAddress(fullAddress);
+
+        setUserLocation({
+          latitude: loc.coords.latitude,
+          longitude: loc.coords.longitude,
+          address: fullAddress,
+        });
+      } else {
+        setUserLocationAddress(`Lat: ${loc.coords.latitude.toFixed(4)}, Lng: ${loc.coords.longitude.toFixed(4)}`);
+      }
+    } catch (error) {
+      console.log('Error obteniendo ubicación GPS:', error);
+      setGpsStatus('denied');
+      setUserLocationAddress('Chorrillos, Lima (Referencial)');
+    } finally {
+      setIsLocating(false);
+    }
+  };
+
+  // Filtrado de puntos y cálculo de distancia dinámica si el GPS está activo
+  const filteredPoints = useMemo(() => {
+    return mapPoints
+      .map(pt => {
+        let calculatedDistance = pt.distance;
+        if (userCoords) {
+          calculatedDistance = calculateDistanceKm(
+            userCoords.lat,
+            userCoords.lng,
+            pt.latitude,
+            pt.longitude
+          );
+        }
+        return {
+          ...pt,
+          distance: calculatedDistance,
+        };
+      })
+      .filter(pt => {
+        if (selectedFilter === 'Botaderos' && pt.type !== 'botadero') return false;
+        if (selectedFilter === 'Jornadas' && pt.type !== 'jornada') return false;
+        if (selectedFilter === 'Árboles' && pt.type !== 'arbol') return false;
+
+        if (searchQuery.trim() !== '') {
+          const q = searchQuery.toLowerCase();
+          return (
+            pt.title.toLowerCase().includes(q) ||
+            pt.address.toLowerCase().includes(q) ||
+            pt.categoryLabel.toLowerCase().includes(q)
+          );
+        }
+        return true;
+      });
+  }, [mapPoints, selectedFilter, searchQuery, userCoords]);
 
   const handlePointAction = (point: MapPoint) => {
     if (point.type === 'jornada' || point.type === 'arbol') {
       joinJornada(point.id);
-      Alert.alert('¡Excelente!', `Te has sumado a la actividad en "${point.title}".`);
+      Alert.alert('¡Excelente!', `Te has sumado a la actividad en "${point.title}". ¡Sumaste +100 puntos!`);
       setSelectedPoint(null);
     } else {
       setSelectedPoint(null);
@@ -79,6 +180,37 @@ export default function MapScreen() {
           )}
         </View>
 
+        {/* Banner de Estado del GPS Real */}
+        <TouchableOpacity
+          style={[
+            styles.gpsStatusBanner,
+            gpsStatus === 'granted' ? styles.gpsBannerActive : styles.gpsBannerWarning,
+          ]}
+          onPress={requestGPSLocation}>
+          <Ionicons
+            name={gpsStatus === 'granted' ? 'navigate-circle' : 'warning-outline'}
+            size={18}
+            color={gpsStatus === 'granted' ? '#2E7D32' : '#E65100'}
+          />
+          <Text
+            style={[
+              styles.gpsBannerText,
+              gpsStatus === 'granted' ? styles.gpsTextActive : styles.gpsTextWarning,
+            ]}
+            numberOfLines={1}>
+            {isLocating
+              ? 'Conectando con GPS...'
+              : gpsStatus === 'granted'
+              ? `Ubicación: ${userLocationAddress}`
+              : 'GPS inactivo • Toca aquí para conceder permisos'}
+          </Text>
+          {isLocating ? (
+            <ActivityIndicator size="small" color="#2E7D32" />
+          ) : (
+            <Ionicons name="refresh" size={14} color="#666" />
+          )}
+        </TouchableOpacity>
+
         {/* Chips de filtro */}
         <ScrollView
           horizontal
@@ -92,7 +224,7 @@ export default function MapScreen() {
                 styles.filterChipText,
                 selectedFilter === 'Todos' && styles.filterChipTextActive,
               ]}>
-              Todos
+              Todos ({mapPoints.length})
             </Text>
           </TouchableOpacity>
 
@@ -154,9 +286,7 @@ export default function MapScreen() {
 
       {/* Contenedor de Mapa Visual */}
       <View style={styles.mapCanvas}>
-        {/* Calles y cuadrícula visual de fondo simulando el mapa de Lima / Chorrillos */}
         <View style={styles.mapGridBackground}>
-          {/* Bloques de mapa */}
           <View style={[styles.mapBlock, { top: 40, left: 30, width: 140, height: 110 }]} />
           <View style={[styles.mapBlock, { top: 50, right: 25, width: 150, height: 130 }]} />
           <View style={[styles.mapBlock, { top: 190, left: 20, width: 150, height: 160 }]} />
@@ -164,24 +294,22 @@ export default function MapScreen() {
           <View style={[styles.mapBlock, { bottom: 60, left: 40, width: 130, height: 120 }]} />
           <View style={[styles.mapBlock, { bottom: 50, right: 35, width: 150, height: 130 }]} />
 
-          {/* Vías y Avenidas */}
           <View style={styles.avenueHorizontal} />
           <View style={styles.avenueVertical} />
           <View style={styles.avenueDiagonal} />
 
-          {/* Rótulos de calles del prototipo */}
           <Text style={[styles.streetLabel, { top: 155, left: 35 }]}>Av. Los Pinos</Text>
           <Text style={[styles.streetLabel, { top: 355, left: 30 }]}>Av. Bolognesi</Text>
           <Text style={[styles.parkLabel, { top: 80, left: 55 }]}>🌲 Parque</Text>
         </View>
 
-        {/* Indicador de puntos activos flotante */}
+        {/* Indicador de puntos activos */}
         <View style={styles.activeCountBadge}>
           <View style={styles.activeDot} />
           <Text style={styles.activeCountText}>{filteredPoints.length} puntos activos</Text>
         </View>
 
-        {/* Punto GPS del usuario actual */}
+        {/* Punto GPS del voluntario actual con pulso */}
         <View style={styles.userLocationMarker}>
           <View style={styles.userLocationPulse} />
           <View style={styles.userLocationDot} />
@@ -233,11 +361,11 @@ export default function MapScreen() {
           );
         })}
 
-        {/* Botón flotante para centrar mapa en mi ubicación */}
+        {/* Botón flotante para centrar mapa en mi ubicación GPS */}
         <TouchableOpacity
           style={styles.gpsCenterButton}
-          onPress={() => Alert.alert('Ubicación centrada', 'El mapa está enfocado en tu zona (Chorrillos).')}>
-          <Ionicons name="locate" size={22} color="#4CAF50" />
+          onPress={requestGPSLocation}>
+          <Ionicons name="locate" size={24} color="#4CAF50" />
         </TouchableOpacity>
 
         {/* Leyenda inferior */}
@@ -290,7 +418,7 @@ export default function MapScreen() {
                   </View>
                   <View style={styles.detailDistance}>
                     <Ionicons name="navigate-outline" size={13} color="#4CAF50" />
-                    <Text style={styles.detailDistanceText}>{selectedPoint.distance}</Text>
+                    <Text style={styles.detailDistanceText}>A {selectedPoint.distance} de ti</Text>
                   </View>
                 </View>
 
@@ -353,8 +481,8 @@ const styles = StyleSheet.create({
   topBar: {
     backgroundColor: '#ffffff',
     paddingTop: 45,
-    paddingHorizontal: 20,
-    paddingBottom: 12,
+    paddingHorizontal: 16,
+    paddingBottom: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
     zIndex: 10,
@@ -363,7 +491,7 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
     color: '#222',
-    marginBottom: 12,
+    marginBottom: 10,
   },
   searchBar: {
     flexDirection: 'row',
@@ -371,8 +499,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#f1f3f4',
     borderRadius: 12,
     paddingHorizontal: 12,
-    height: 42,
-    marginBottom: 12,
+    height: 40,
+    marginBottom: 8,
   },
   searchIcon: {
     marginRight: 8,
@@ -381,6 +509,36 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 14,
     color: '#333',
+  },
+  gpsStatusBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 10,
+    marginBottom: 10,
+    gap: 8,
+  },
+  gpsBannerActive: {
+    backgroundColor: '#e8f5e9',
+    borderWidth: 1,
+    borderColor: '#c8e6c9',
+  },
+  gpsBannerWarning: {
+    backgroundColor: '#fff3e0',
+    borderWidth: 1,
+    borderColor: '#ffe082',
+  },
+  gpsBannerText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  gpsTextActive: {
+    color: '#2E7D32',
+  },
+  gpsTextWarning: {
+    color: '#E65100',
   },
   filterRow: {
     flexDirection: 'row',
@@ -505,17 +663,17 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: '48%',
     left: '49%',
-    width: 24,
-    height: 24,
+    width: 26,
+    height: 26,
     justifyContent: 'center',
     alignItems: 'center',
   },
   userLocationPulse: {
     position: 'absolute',
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: 'rgba(33, 150, 243, 0.25)',
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: 'rgba(33, 150, 243, 0.35)',
   },
   userLocationDot: {
     width: 12,
@@ -576,17 +734,17 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 55,
     right: 15,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: '#ffffff',
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 4,
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+    elevation: 5,
   },
   legendContainer: {
     position: 'absolute',

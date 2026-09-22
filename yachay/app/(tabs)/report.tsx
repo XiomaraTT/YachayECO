@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   Image,
   Alert,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -49,7 +50,7 @@ const PROBLEM_OPTIONS: { type: ProblemType; label: string; desc: string; icon: a
 
 export default function ReportScreen() {
   const router = useRouter();
-  const { user, addReport } = useApp();
+  const { user, addReport, userLocation } = useApp();
 
   const [step, setStep] = useState<number>(1);
   const [problemType, setProblemType] = useState<ProblemType>('Microbotadero');
@@ -62,78 +63,93 @@ export default function ReportScreen() {
   });
   const [description, setDescription] = useState<string>('');
   const [isLocating, setIsLocating] = useState<boolean>(false);
+  const [gpsStatus, setGpsStatus] = useState<string>('Iniciando...');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
-  // Selector de imagen (Cámara o Galería)
-  const handlePickImage = async () => {
-    Alert.alert(
-      'Añadir fotografía',
-      'Elige una opción para adjuntar la evidencia fotográfica',
-      [
-        {
-          text: 'Tomar foto con cámara',
-          onPress: async () => {
-            try {
-              const perm = await ImagePicker.requestCameraPermissionsAsync();
-              if (!perm.granted) {
-                Alert.alert('Permiso requerido', 'Se necesita acceso a la cámara para tomar fotos.');
-                return;
-              }
-              const res = await ImagePicker.launchCameraAsync({
-                mediaTypes: ImagePicker.MediaTypeOptions.Images,
-                quality: 0.7,
-                allowsEditing: true,
-                aspect: [4, 3],
-              });
-              if (!res.canceled && res.assets && res.assets[0]) {
-                setPhotoUri(res.assets[0].uri);
-              }
-            } catch (e) {
-              console.log('Camera error, fallback to mock image:', e);
-              setPhotoUri('https://images.unsplash.com/photo-1611284446314-60a58ac0deb9?w=600&auto=format&fit=crop&q=80');
-            }
-          },
-        },
-        {
-          text: 'Elegir de la galería',
-          onPress: async () => {
-            try {
-              const res = await ImagePicker.launchImageLibraryAsync({
-                mediaTypes: ImagePicker.MediaTypeOptions.Images,
-                quality: 0.7,
-                allowsEditing: true,
-                aspect: [4, 3],
-              });
-              if (!res.canceled && res.assets && res.assets[0]) {
-                setPhotoUri(res.assets[0].uri);
-              }
-            } catch (e) {
-              console.log('Gallery error, fallback to mock image:', e);
-              setPhotoUri('https://images.unsplash.com/photo-1611284446314-60a58ac0deb9?w=600&auto=format&fit=crop&q=80');
-            }
-          },
-        },
-        {
-          text: 'Foto de prueba (Demo)',
-          onPress: () => {
-            setPhotoUri('https://images.unsplash.com/photo-1611284446314-60a58ac0deb9?w=600&auto=format&fit=crop&q=80');
-          },
-        },
-        { text: 'Cancelar', style: 'cancel' },
-      ]
-    );
+  // Al pasar al paso 2, solicitar permiso de ubicación y GPS automáticamente
+  useEffect(() => {
+    if (step === 2) {
+      handleDetectLocation();
+    }
+  }, [step]);
+
+  // Tomar foto con la cámara (solicita permiso explícito)
+  const handleTakePhoto = async () => {
+    try {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert(
+          'Permiso de Cámara Denegado',
+          'Para tomar la foto de evidencia, debes conceder permiso de acceso a la cámara.',
+          [
+            { text: 'Cancelar', style: 'cancel' },
+            { text: 'Conceder permiso', onPress: handleTakePhoto },
+          ]
+        );
+        return;
+      }
+
+      const res = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.7,
+        allowsEditing: true,
+        aspect: [4, 3],
+      });
+
+      if (!res.canceled && res.assets && res.assets[0]) {
+        setPhotoUri(res.assets[0].uri);
+      }
+    } catch (e) {
+      console.log('Camera error, fallback to mock image:', e);
+      setPhotoUri('https://images.unsplash.com/photo-1611284446314-60a58ac0deb9?w=600&auto=format&fit=crop&q=80');
+    }
   };
 
-  // Detección de GPS
+  // Seleccionar foto de la galería (solicita permiso)
+  const handlePickFromGallery = async () => {
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Permiso requerido', 'Se requiere acceso a las fotos para seleccionar la evidencia.');
+        return;
+      }
+
+      const res = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.7,
+        allowsEditing: true,
+        aspect: [4, 3],
+      });
+
+      if (!res.canceled && res.assets && res.assets[0]) {
+        setPhotoUri(res.assets[0].uri);
+      }
+    } catch (e) {
+      console.log('Gallery error, fallback to mock image:', e);
+      setPhotoUri('https://images.unsplash.com/photo-1611284446314-60a58ac0deb9?w=600&auto=format&fit=crop&q=80');
+    }
+  };
+
+  // Detección de GPS en tiempo real con permisos activos
   const handleDetectLocation = async () => {
     setIsLocating(true);
+    setGpsStatus('Buscando satélites...');
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('Permiso GPS', 'Se mantendrá la ubicación referencial de Chorrillos.');
+        setGpsStatus('Permiso GPS denegado');
+        Alert.alert(
+          'Permiso GPS Requerido',
+          'La app necesita conocer tu ubicación para georreferenciar el microbotadero.',
+          [
+            { text: 'Usar Chorrillos por defecto', style: 'cancel' },
+            { text: 'Conceder permiso', onPress: handleDetectLocation },
+          ]
+        );
         setIsLocating(false);
         return;
       }
+
       const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
       setCoords({ lat: loc.coords.latitude, lng: loc.coords.longitude });
 
@@ -146,10 +162,15 @@ export default function ReportScreen() {
         const item = rev[0];
         const street = item.street || item.name || 'Av. Los Pinos 342';
         const district = item.district || item.subregion || item.city || 'Chorrillos';
-        setAddress(`${street}, ${district}`);
+        const detectedAddress = `${street}, ${district}`;
+        setAddress(detectedAddress);
+        setGpsStatus(`GPS Activo (±${Math.round(loc.coords.accuracy || 10)}m)`);
+      } else {
+        setGpsStatus('Coordenadas detectadas');
       }
     } catch (e) {
       console.log('Location error:', e);
+      setGpsStatus('GPS no disponible');
     } finally {
       setIsLocating(false);
     }
@@ -194,7 +215,7 @@ export default function ReportScreen() {
     setSeverity('Leve');
     setPhotoUri(null);
     setDescription('');
-    router.push('/(tabs)/index');
+    router.push('/(tabs)' as any);
   };
 
   // ==========================================
@@ -340,52 +361,89 @@ export default function ReportScreen() {
             {photoUri ? (
               <View style={styles.photoPreviewContainer}>
                 <Image source={{ uri: photoUri }} style={styles.photoPreview} />
-                <TouchableOpacity
-                  style={styles.changePhotoButton}
-                  onPress={handlePickImage}>
-                  <Ionicons name="camera-reverse-outline" size={16} color="#fff" />
-                  <Text style={styles.changePhotoText}>Cambiar foto</Text>
-                </TouchableOpacity>
+                <View style={styles.photoActionButtons}>
+                  <TouchableOpacity
+                    style={styles.retakePhotoButton}
+                    onPress={handleTakePhoto}>
+                    <Ionicons name="camera" size={16} color="#fff" />
+                    <Text style={styles.photoActionText}>Retomar</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.deletePhotoButton}
+                    onPress={() => setPhotoUri(null)}>
+                    <Ionicons name="trash" size={16} color="#fff" />
+                    <Text style={styles.photoActionText}>Eliminar</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             ) : (
-              <TouchableOpacity
-                style={styles.photoUploadBox}
-                activeOpacity={0.8}
-                onPress={handlePickImage}>
-                <View style={styles.photoIconCircle}>
-                  <Ionicons name="camera-outline" size={26} color="#4CAF50" />
-                </View>
-                <Text style={styles.photoUploadTitle}>Toca para agregar foto</Text>
-                <Text style={styles.photoUploadSubtitle}>
-                  Una imagen ayuda a verificar el reporte
-                </Text>
-              </TouchableOpacity>
+              <View style={styles.photoButtonsContainer}>
+                <TouchableOpacity
+                  style={styles.photoOptionButton}
+                  activeOpacity={0.8}
+                  onPress={handleTakePhoto}>
+                  <View style={styles.photoOptionIconCircle}>
+                    <Ionicons name="camera" size={24} color="#4CAF50" />
+                  </View>
+                  <Text style={styles.photoOptionTitle}>Tomar con Cámara</Text>
+                  <Text style={styles.photoOptionSubtitle}>Solicita permiso de cámara</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.photoOptionButton}
+                  activeOpacity={0.8}
+                  onPress={handlePickFromGallery}>
+                  <View style={styles.photoOptionIconCircle}>
+                    <Ionicons name="images" size={24} color="#1976d2" />
+                  </View>
+                  <Text style={styles.photoOptionTitle}>Elegir de Galería</Text>
+                  <Text style={styles.photoOptionSubtitle}>Fotos del dispositivo</Text>
+                </TouchableOpacity>
+              </View>
             )}
 
             {/* Ubicación */}
-            <Text style={[styles.sectionQuestion, { marginTop: 24 }]}>Ubicación</Text>
+            <View style={styles.locationHeaderRow}>
+              <Text style={styles.sectionQuestion}>Ubicación</Text>
+              <View style={styles.gpsLiveBadge}>
+                <Ionicons name="radio-outline" size={12} color="#2E7D32" />
+                <Text style={styles.gpsLiveText}>{gpsStatus}</Text>
+              </View>
+            </View>
+
             <View style={styles.locationCard}>
               <View style={styles.locationHeader}>
-                <Ionicons name="location-sharp" size={20} color="#e53935" />
+                <Ionicons name="location-sharp" size={22} color="#e53935" style={{ marginTop: 2 }} />
                 <View style={styles.locationTextContainer}>
-                  <Text style={styles.locationTitle}>{address}</Text>
-                  <Text style={styles.locationSubtitle}>
-                    Chorrillos, Lima • Detectado automáticamente
+                  <Text style={styles.locationInputLabel}>Dirección (editable):</Text>
+                  <TextInput
+                    style={styles.locationInput}
+                    value={address}
+                    onChangeText={setAddress}
+                    placeholder="Ingresa la calle o referencia..."
+                  />
+                  <Text style={styles.locationCoords}>
+                    Coordenadas: {coords.lat.toFixed(4)}, {coords.lng.toFixed(4)}
                   </Text>
                 </View>
               </View>
+
               <TouchableOpacity
                 style={styles.refreshGpsButton}
                 onPress={handleDetectLocation}
                 disabled={isLocating}>
-                <Ionicons
-                  name="navigate-outline"
-                  size={14}
-                  color="#4CAF50"
-                  style={{ marginRight: 4 }}
-                />
+                {isLocating ? (
+                  <ActivityIndicator size="small" color="#4CAF50" style={{ marginRight: 6 }} />
+                ) : (
+                  <Ionicons
+                    name="navigate-outline"
+                    size={14}
+                    color="#4CAF50"
+                    style={{ marginRight: 4 }}
+                  />
+                )}
                 <Text style={styles.refreshGpsText}>
-                  {isLocating ? 'Detectando GPS...' : 'Actualizar GPS'}
+                  {isLocating ? 'Detectando señal...' : 'Actualizar GPS en tiempo real'}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -461,7 +519,7 @@ export default function ReportScreen() {
             onPress={handleSubmitReport}
             disabled={isSubmitting}>
             <Text style={styles.continueButtonText}>
-              {isSubmitting ? 'Enviando...' : 'Enviar reporte'}
+              {isSubmitting ? 'Enviando a la nube...' : 'Enviar reporte'}
             </Text>
           </TouchableOpacity>
         )}
@@ -531,7 +589,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: '#333',
-    marginBottom: 15,
+    marginBottom: 12,
   },
   optionsList: {
     gap: 12,
@@ -617,33 +675,45 @@ const styles = StyleSheet.create({
   severityButtonTextSelected: {
     color: '#2E7D32',
   },
-  photoUploadBox: {
-    borderWidth: 1.5,
-    borderColor: '#c8e6c9',
-    borderStyle: 'dashed',
-    borderRadius: 14,
-    paddingVertical: 32,
-    alignItems: 'center',
-    backgroundColor: '#fafdfa',
+  photoButtonsContainer: {
+    flexDirection: 'row',
+    gap: 12,
   },
-  photoIconCircle: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: '#e8f5e9',
+  photoOptionButton: {
+    flex: 1,
+    borderWidth: 1.5,
+    borderColor: '#e0e0e0',
+    borderRadius: 14,
+    paddingVertical: 20,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    backgroundColor: '#fafafa',
+  },
+  photoOptionIconCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#ffffff',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
-  photoUploadTitle: {
-    fontSize: 14,
-    fontWeight: '600',
+  photoOptionTitle: {
+    fontSize: 13,
+    fontWeight: '700',
     color: '#333',
+    textAlign: 'center',
   },
-  photoUploadSubtitle: {
-    fontSize: 12,
+  photoOptionSubtitle: {
+    fontSize: 11,
     color: '#888',
-    marginTop: 4,
+    marginTop: 2,
+    textAlign: 'center',
   },
   photoPreviewContainer: {
     borderRadius: 14,
@@ -652,14 +722,18 @@ const styles = StyleSheet.create({
   },
   photoPreview: {
     width: '100%',
-    height: 180,
+    height: 200,
     borderRadius: 14,
   },
-  changePhotoButton: {
+  photoActionButtons: {
     position: 'absolute',
     bottom: 10,
     right: 10,
-    backgroundColor: 'rgba(0,0,0,0.65)',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  retakePhotoButton: {
+    backgroundColor: 'rgba(0,0,0,0.7)',
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
@@ -667,10 +741,40 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     gap: 4,
   },
-  changePhotoText: {
+  deletePhotoButton: {
+    backgroundColor: 'rgba(211, 47, 47, 0.85)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    gap: 4,
+  },
+  photoActionText: {
     color: '#fff',
     fontSize: 12,
     fontWeight: '600',
+  },
+  locationHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 24,
+    marginBottom: 10,
+  },
+  gpsLiveBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#e8f5e9',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    gap: 4,
+  },
+  gpsLiveText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#2E7D32',
   },
   locationCard: {
     backgroundColor: '#f9f9f9',
@@ -687,29 +791,40 @@ const styles = StyleSheet.create({
   locationTextContainer: {
     flex: 1,
   },
-  locationTitle: {
+  locationInputLabel: {
+    fontSize: 11,
+    color: '#777',
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  locationInput: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#333',
+    color: '#222',
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
   },
-  locationSubtitle: {
-    fontSize: 12,
-    color: '#777',
-    marginTop: 2,
+  locationCoords: {
+    fontSize: 11,
+    color: '#888',
+    marginTop: 4,
   },
   refreshGpsButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    alignSelf: 'flex-end',
-    marginTop: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    justifyContent: 'center',
+    marginTop: 12,
+    paddingVertical: 8,
     backgroundColor: '#e8f5e9',
-    borderRadius: 8,
+    borderRadius: 10,
   },
   refreshGpsText: {
-    fontSize: 11,
-    fontWeight: '600',
+    fontSize: 12,
+    fontWeight: '700',
     color: '#4CAF50',
   },
   descriptionInput: {
